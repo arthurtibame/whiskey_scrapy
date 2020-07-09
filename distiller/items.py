@@ -22,5 +22,17 @@ class DistillerItem(scrapy.Item):
 class DistillerCommentItem(scrapy.Item):
     
     name = scrapy.Field()  # 酒名
+    details = scrapy.Field()  # 酒名
+
+class DetailedCommentItem(DistillerCommentItem):    
+    user_name = scrapy.Field()  # 評論者
     star = scrapy.Field()  # 評分      
-    comment = scrapy.Field() # 評論       
+    comment = scrapy.Field() # 評論    
+"""       
+{ 酒A:[
+    {用戶1:評論},
+    {用戶2:評論}
+    ]
+},
+酒B:[{用戶1:評論}},{用戶2:評論}]}
+"""

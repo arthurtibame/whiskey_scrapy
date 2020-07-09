@@ -1,5 +1,6 @@
+import logging
 import os
-from distiller.items import DistillerItem, DistillerCommentItem
+from distiller.items import DistillerItem, DistillerCommentItem, DetailedCommentItem
 import scrapy
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -50,8 +51,10 @@ class DistillerSpider(scrapy.Spider):
         yield basic_item
 
 class DistillerCommentSpider(scrapy.Spider):
-    
-    name = "distiller_comment"
+    handle_httpstatus_list = [404, 302, 404, 500, 520, 521]
+    name = "distiller_comment"        
+    logger = logging.getLogger('CommentsLogger')                            
+
 
     def start_requests(self):
         df = pd.read_csv(r'./all_urls.csv')
@@ -60,7 +63,9 @@ class DistillerCommentSpider(scrapy.Spider):
         for url in urls:
             url = f'{url}/tastes'
             yield scrapy.Request(url=url, callback=self._page_handler)
-
+        # test json
+        #url = r'https://distiller.com//spirits/hibiki-21-year/tastes'
+        #yield scrapy.Request(url=url, callback=self._page_handler)
 
     def _page_handler(self, response):
         LAST_PAGE = self._last_page_dealer(response)
@@ -71,40 +76,45 @@ class DistillerCommentSpider(scrapy.Spider):
             yield scrapy.Request(url=url, callback=self.comments_crawler)
     
     def comments_crawler(self, response):
-        self._dir_checker() # check dir
-
-        soup = BeautifulSoup(response.text, 'lxml')        
-        comments = soup.find_all('div', {"class":"taste-content"})
-        name = response.url.split('/')[-2]
+        basic_item = DistillerCommentItem()
+        detail_item = DetailedCommentItem()
         
-
-        #comment_dict = dict()
-        for comment in comments:
-            
-            content = comment.find('div',{'class':"body"})
-            star = comment.find('div',{'class':"rating-display__value"})
-            try:
-                content = content.text.strip()
-            except:
-                content = 'null'
-            try:
-                star = star.text
-            except:
-                star = 'null'
-            temp_list = [star, content]
-            df = pd.DataFrame([temp_list])
-            if os.path.isfile(f"./comments/{name}.csv"):
-
-                df.to_csv(f"./comments/{name}.csv", index=None, encoding='utf-8-sig', header=False, mode='a')
+        if response.status == 200:            
+            soup = BeautifulSoup(response.text, 'lxml')        
+            comments = soup.find_all('div', {"class":"taste-content"})        
+            name = response.url.split('/')[-2]       
+            basic_item['name'] = name
+            if comments:
+                #comment_dict = dict()
+                for comment in comments:
+                    temp_dict = dict()
+                    user_name = comment.find('h3',{'class':"mini-headline name username truncate-line"})
+                    content = comment.find('div',{'class':"body"})
+                    star = comment.find('div',{'class':"rating-display__value"})
+                    try:                        
+                        temp_dict['user_name'] = user_name.text
+                    except:
+                        self.logger.warning(f"There is no comment in {response.url}")
+                    try:
+                        temp_dict['comment'] = content.text.strip()
+                    except:
+                        temp_dict['comment'] = 'null'
+                    try:
+                        temp_dict['star'] = star.text
+                    except:
+                        temp_dict['star'] = 'null'
+                    detail_item['name'] = name
+                    detail_item['details'] = temp_dict
+                    yield detail_item
             else:
-                df.to_csv(f"./comments/{name}.csv", index=None, encoding='utf-8-sig', header=['star', 'comment'])
-            
-             
-
-
-        
-                
-
+                # there is no commnet
+                with open('logger.log', mode='a') as f:
+                    f.write(f"There is no comment in {name}, Url:{response.url}\n")
+                self.logger.warning(f"There is no comment in {response.url}")
+        else:
+            with open('logger.log', mode='a') as f:
+                f.wirte(f"resopnse_status/{response.status}, {name}, url={response.url}\n")
+            self.logger.error(f"resopnse_status/{response.status}, url={response.url}")
 
     def _last_page_dealer(self, response):
         soup = BeautifulSoup(response.text, 'lxml')
@@ -120,4 +130,12 @@ class DistillerCommentSpider(scrapy.Spider):
     def _dir_checker(self):
         if os.path.isdir(r'./comments') == False:
             os.mkdir(r'./comments')
-        
+
+# save csv version:
+#                     temp_list = [star, content]
+#                    df = pd.DataFrame([temp_list])
+#                    if os.path.isfile(f"./comments/{name}.csv"):
+#
+#                        df.to_csv(f"./comments/{name}.csv", index=None, encoding='utf-8-sig', header=False, mode='a')
+#                    else:
+#                        df.to_csv(f"./comments/{name}.csv", index=None, encoding='utf-8-sig', header=['star', 'comment'])                           
